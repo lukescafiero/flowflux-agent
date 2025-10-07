@@ -13,6 +13,52 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
+# --- Add near your other env setup (you already have load_dotenv) ---
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE = os.getenv("SUPABASE_SERVICE_ROLE")
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
+
+# --- Pydantic model for lead input ---
+class LeadIn(BaseModel):
+    name: str
+    phone: str
+    first_message: Optional[str] = None
+    page_url: Optional[str] = None
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+
+# --- Small helper for client IP ---
+def _client_ip(request: Request) -> str:
+    return (request.headers.get("x-forwarded-for","").split(",")[0].strip()
+            or (request.client.host if request.client else ""))
+
+# --- Lead endpoint (no Twilio) ---
+@app.post("/lead")
+async def create_lead(body: LeadIn, request: Request):
+    ua = request.headers.get("user-agent", "")
+    ip = _client_ip(request)
+
+    row = {
+        "name": body.name.strip(),
+        "phone": body.phone.strip(),
+        "first_message": (body.first_message or "").strip(),
+        "page_url": (body.page_url or "").strip(),
+        "user_agent": ua[:500],
+        "ip": ip[:100],
+        "utm_source": body.utm_source,
+        "utm_medium": body.utm_medium,
+        "utm_campaign": body.utm_campaign,
+    }
+
+    try:
+        supabase.table("leads").insert(row).execute()
+        return {"ok": True}
+    except Exception as e:
+        # Log server-side; return clean error to client
+        print("[lead insert error]", e)
+        return JSONResponse({"ok": False, "error": "db_insert_failed"}, status_code=500)
+
 app = FastAPI()
 
 
