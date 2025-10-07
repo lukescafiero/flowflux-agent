@@ -9,48 +9,26 @@ from twilio.rest import Client as TwilioClient
 from typing import Optional
 from fastapi.responses import JSONResponse
 import asyncio
-
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 app = FastAPI()
 
-# --- BEGIN RAW CORS MIDDLEWARE ---
-ALLOW_ORIGINS = {
+
+origins = [
     "https://www.flowfluxmedia.com",
     "https://flowfluxmedia.com",
-    "https://flowfluxmedia.squarespace.com",
-}
+    "https://flowfluxmedia.squarespace.com",  # optional preview domain
+]
 
-@app.middleware("http")
-async def raw_cors(request, call_next):
-    origin = request.headers.get("origin", "")
-    allowed = origin and (origin in ALLOW_ORIGINS or origin.endswith(".squarespace.com"))
-
-    # Handle preflight early
-    if request.method == "OPTIONS":
-        req_headers = request.headers.get("access-control-request-headers", "content-type, authorization")
-        headers = {
-            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-            "Access-Control-Allow-Headers": req_headers,
-            "Access-Control-Max-Age": "86400",
-        }
-        if allowed:
-            headers["Access-Control-Allow-Origin"] = origin
-            headers["Vary"] = "Origin"
-            headers["Access-Control-Allow-Credentials"] = "true"
-        else:
-            headers["Access-Control-Allow-Origin"] = "*"
-        return Response(status_code=204, headers=headers)
-
-    # Normal requests
-    response = await call_next(request)
-    if allowed:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Vary"] = "Origin"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
-# --- END RAW CORS MIDDLEWARE ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],   # include OPTIONS for preflight
+    allow_headers=["Content-Type", "Authorization", "X-Trigger-Preflight"],
+)
 
 # Optional: simple GET that avoids preflight (handy for quick checks)
 @app.get("/ping")
