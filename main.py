@@ -23,10 +23,24 @@ app.add_middleware(
     max_age=86400,
 )
 
-# Catch-all preflight so OPTIONS never 400s
+# Catch-all preflight so OPTIONS never 400s, and force CORS headers
+from fastapi import Request
+
 @app.options("/{rest_of_path:path}")
-async def preflight_ok(rest_of_path: str):
-    return Response(status_code=204)
+async def preflight_ok(rest_of_path: str, request: Request):
+    origin = request.headers.get("origin", "*")
+    req_headers = request.headers.get("access-control-request-headers", "content-type, authorization")
+    return Response(
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Vary": "Origin",
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+            "Access-Control-Allow-Headers": req_headers,
+            "Access-Control-Max-Age": "86400",
+        },
+    )
+
 
 
 
