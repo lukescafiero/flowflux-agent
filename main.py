@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from typing import Optional
 from fastapi.responses import JSONResponse
+import asyncio
+
 
 load_dotenv()
 
@@ -61,52 +63,59 @@ class ChatRequest(BaseModel):
     phone: Optional[str] = None
     name: Optional[str] = None
 
+
 @app.post("/chat")
 async def chat(payload: ChatRequest):
     user_msg = payload.message
 
-    # lazy init/validate env
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-    if not OPENAI_API_KEY:
-        return JSONResponse({"error": "Server config missing OPENAI_API_KEY"}, status_code=500)
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return JSONResponse({"error": "Server config missing Supabase credentials"}, status_code=500)
+    if not OPENAI_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
+        return JSONResponse({"error": "Server config missing env vars"}, status_code=500)
 
-    openai = OpenAI(api_key=OPENAI_API_KEY)
+    openai = OpenAI(api_key=OPENAI_API_KEY, timeout=10)
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # 1) Save inbound (best-effort)
+    # Save inbound
     try:
         sb.table("messages").insert({
             "direction": "inbound", "channel": "chat", "content": user_msg
         }).execute()
     except Exception as e:
-        # don't fail the whole request if logging fails
-        print("Supabase inbound insert error:", e)
+        print("Supabase inbound error:", e)
 
-    # 2) Generate response
+    # Generate response with timeout
     try:
-        completion = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are Flow Flux AI, a friendly sales agent who qualifies leads and books consultations."},
-                {"role": "user", "content": user_msg},
-            ],
+        completion = await asyncio.wait_for(
+            asyncio.to_thread(
+                lambda: openai.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are Flow Flux AI, a friendly sales agent who qualifies leads and books consultations."},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    max_tokens=150,
+                )
+            ),
+            timeout=15
         )
         reply = completion.choices[0].message.content
+    except asyncio.TimeoutError:
+        print("OpenAI call timed out")
+        return JSONResponse({"error": "AI timed out, try again"}, status_code=504)
     except Exception as e:
         print("OpenAI error:", e)
         return JSONResponse({"error": "AI generation failed"}, status_code=502)
 
-    # 3) Save outbound (best-effort)
+    # Save outbound
     try:
         sb.table("messages").insert({
             "direction": "outbound", "channel": "chat", "content": reply
         }).execute()
     except Exception as e:
-        print("Supabase outbound insert error:", e)
+        print("Supabase outbound error:", e)
 
     return {"reply": reply}
+
