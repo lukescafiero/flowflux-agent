@@ -11,17 +11,45 @@ from twilio.rest import Client as TwilioClient
 load_dotenv()
 
 app = FastAPI()
+# --- BEGIN RAW CORS MIDDLEWARE ---
+ALLOW_ORIGINS = {
+    "https://www.flowfluxmedia.com",
+    "https://flowfluxmedia.com",
+    "https://flowfluxmedia.squarespace.com",
+}
+
+@app.middleware("http")
+async def raw_cors(request, call_next):
+    origin = request.headers.get("origin", "")
+    allowed = origin and (origin in ALLOW_ORIGINS or origin.endswith(".squarespace.com"))
+
+    # Handle preflight early
+    if request.method == "OPTIONS":
+        req_headers = request.headers.get("access-control-request-headers", "content-type, authorization")
+        headers = {
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+            "Access-Control-Allow-Headers": req_headers,
+            "Access-Control-Max-Age": "86400",
+        }
+        if allowed:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Vary"] = "Origin"
+            headers["Access-Control-Allow-Credentials"] = "true"
+        else:
+            headers["Access-Control-Allow-Origin"] = "*"
+        return Response(status_code=204, headers=headers)
+
+    # Normal requests
+    response = await call_next(request)
+    if allowed:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+# --- END RAW CORS MIDDLEWARE ---
 
 
-# TEMP: open it up to prove CORS works
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],       # temp
-    allow_methods=["*"],       # temp
-    allow_headers=["*"],       # temp
-    allow_credentials=False,   # must be False with "*"
-    max_age=86400,
-)
+
 
 # Catch-all preflight so OPTIONS never 400s, and force CORS headers
 from fastapi import Request
@@ -65,15 +93,7 @@ async def preflight_ok(rest_of_path: str, request: Request):
 
 
 
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")  # set to your site later
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN],  # during testing you can use "*"
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Define the request model
 class ChatRequest(BaseModel):
