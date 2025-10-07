@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 fastapi
 uvicorn
 openai
@@ -6,12 +5,3 @@ supabase
 python-dotenv
 requests
 twilio
-=======
-fastapi
-uvicorn
-openai
-supabase
-python-dotenv
-requests
-twilio
->>>>>>> 4fdfd1b14e2a412ba05cd5d1cafda22557264f20
