@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 from openai import OpenAI
 from supabase import create_client
@@ -7,10 +6,13 @@ from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
+from typing import Optional
+from fastapi.responses import JSONResponse
 
 load_dotenv()
 
 app = FastAPI()
+
 # --- BEGIN RAW CORS MIDDLEWARE ---
 ALLOW_ORIGINS = {
     "https://www.flowfluxmedia.com",
@@ -48,91 +50,63 @@ async def raw_cors(request, call_next):
     return response
 # --- END RAW CORS MIDDLEWARE ---
 
+# Optional: simple GET that avoids preflight (handy for quick checks)
+@app.get("/ping")
+def ping():
+    return {"ok": True}
 
 
-
-# Catch-all preflight so OPTIONS never 400s, and force CORS headers
-from fastapi import Request
-
-from fastapi import Request
-from starlette.responses import Response
-
-WHITELIST = {
-    "https://www.flowfluxmedia.com",
-    "https://flowfluxmedia.com",
-    # keep preview if you use it:
-    "https://flowfluxmedia.squarespace.com",
-}
-
-@app.options("/{rest_of_path:path}")
-async def preflight_ok(rest_of_path: str, request: Request):
-    origin = request.headers.get("origin", "")
-    # allow if in whitelist (simple check)
-    allow_origin = origin if origin in WHITELIST or origin.endswith(".squarespace.com") else "*"
-
-    # If you need cookies/auth across origins, set credentials True and DO NOT use "*"
-    allow_credentials = "true" if allow_origin != "*" else "false"
-
-    req_headers = request.headers.get("access-control-request-headers", "content-type, authorization")
-
-    return Response(
-        status_code=204,
-        headers={
-            "Access-Control-Allow-Origin": allow_origin,
-            "Vary": "Origin",
-            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-            "Access-Control-Allow-Headers": req_headers,
-            "Access-Control-Max-Age": "86400",
-            "Access-Control-Allow-Credentials": allow_credentials,
-        },
-    )
-
-
-
-
-
-
-
-
-
-# Define the request model
 class ChatRequest(BaseModel):
     message: str
-    phone: str | None = None
-    name: str | None = None
-    
-# Connect to APIs
-openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-twilio = TwilioClient(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+    phone: Optional[str] = None
+    name: Optional[str] = None
 
 @app.post("/chat")
 async def chat(payload: ChatRequest):
     user_msg = payload.message
 
+    # lazy init/validate env
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-    # Save inbound message
-    supabase.table("messages").insert({
-        "direction": "inbound",
-        "channel": "chat",
-        "content": user_msg
-    }).execute()
+    if not OPENAI_API_KEY:
+        return JSONResponse({"error": "Server config missing OPENAI_API_KEY"}, status_code=500)
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return JSONResponse({"error": "Server config missing Supabase credentials"}, status_code=500)
 
-    # Generate response
-    completion = openai.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are Flow Flux AI, a friendly sales agent who qualifies leads and books consultations."},
-            {"role": "user", "content": user_msg}
-        ]
-    )
-    reply = completion.choices[0].message.content
+    openai = OpenAI(api_key=OPENAI_API_KEY)
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # Save outbound message
-    supabase.table("messages").insert({
-        "direction": "outbound",
-        "channel": "chat",
-        "content": reply
-    }).execute()
+    # 1) Save inbound (best-effort)
+    try:
+        sb.table("messages").insert({
+            "direction": "inbound", "channel": "chat", "content": user_msg
+        }).execute()
+    except Exception as e:
+        # don't fail the whole request if logging fails
+        print("Supabase inbound insert error:", e)
+
+    # 2) Generate response
+    try:
+        completion = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are Flow Flux AI, a friendly sales agent who qualifies leads and books consultations."},
+                {"role": "user", "content": user_msg},
+            ],
+        )
+        reply = completion.choices[0].message.content
+    except Exception as e:
+        print("OpenAI error:", e)
+        return JSONResponse({"error": "AI generation failed"}, status_code=502)
+
+    # 3) Save outbound (best-effort)
+    try:
+        sb.table("messages").insert({
+            "direction": "outbound", "channel": "chat", "content": reply
+        }).execute()
+    except Exception as e:
+        print("Supabase outbound insert error:", e)
 
     return {"reply": reply}
