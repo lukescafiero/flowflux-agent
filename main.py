@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import Response
 from openai import OpenAI
 from supabase import create_client
 from pydantic import BaseModel
@@ -8,22 +9,28 @@ from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 
 load_dotenv()
+
 app = FastAPI()
+
+
+# TEMP: open it up to prove CORS works
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://www.flowfluxmedia.com",
-        "https://flowfluxmedia.com",
-        "https://flowfluxmedia.squarespace.com",
-    ],
-    allow_origin_regex=r"https://.*\.squarespace\.com",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],       # temp
+    allow_methods=["*"],       # temp
+    allow_headers=["*"],       # temp
+    allow_credentials=False,   # must be False with "*"
+    max_age=86400,
 )
 
-from fastapi.middleware.cors import CORSMiddleware
-import os
+# Catch-all preflight so OPTIONS never 400s
+@app.options("/{rest_of_path:path}")
+async def preflight_ok(rest_of_path: str):
+    return Response(status_code=204)
+
+
+
+
 
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")  # set to your site later
 
