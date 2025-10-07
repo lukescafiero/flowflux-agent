@@ -8,6 +8,32 @@ from twilio.rest import Client as TwilioClient
 
 load_dotenv()
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://www.flowfluxmedia.com",
+        "https://flowfluxmedia.com",
+        "https://flowfluxmedia.squarespace.com",
+    ],
+    allow_origin_regex=r"https://.*\.squarespace\.com",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+from fastapi.middleware.cors import CORSMiddleware
+import os
+
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")  # set to your site later
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_ORIGIN],  # during testing you can use "*"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Define the request model
 class ChatRequest(BaseModel):
     message: str
