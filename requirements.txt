@@ -1,7 +1,7 @@
-fastapi
-uvicorn
-openai
-supabase
-python-dotenv
-requests
-twilio
+fastapi==0.111.0
+uvicorn==0.30.0
+openai>=1.0.0
+supabase==2.4.0
+python-dotenv==1.0.1
+requests==2.32.3
+
