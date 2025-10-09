@@ -16,5 +16,6 @@ websockets==11.0.3
 openai==1.52.2
 python-dotenv==1.0.1
 pydantic==2.9.2
+email-validator==2.2.0
 
 # force rebuild
