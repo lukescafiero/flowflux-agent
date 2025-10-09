@@ -1,10 +1,17 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-supabase==2.6.0
-gotrue==2.5.4
+
+# Supabase stack (works with httpx 0.28.x)
+supabase==2.7.4
+gotrue==2.8.0
+postgrest==0.16.11
+realtime==2.0.3
+
 httpx==0.28.1
 httpcore==1.0.5
+
 openai==1.52.2
 python-dotenv==1.0.1
 pydantic==2.9.2
+websockets==12.0
 
